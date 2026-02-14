@@ -1,0 +1,38 @@
+name: RDP_with_Tailscale
+on: 
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    steps:
+      - name: Tailscaleのインストール
+        shell: powershell
+        run: |
+          # Tailscaleのダウンロードとインストール
+          $dest = "$env:TEMP\tailscale-setup.exe"
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile $dest
+          Start-Process -FilePath $dest -ArgumentList "/quiet" -Wait
+
+      - name: Tailscaleに接続
+        shell: powershell
+        run: |
+          # インストールされたパスを探して実行
+          $ts = "C:\Program Files\Tailscale\tailscale.exe"
+          & $ts up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --accept-routes
+
+      - name: RDPの有効化とユーザー作成
+        shell: powershell
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          $pass = ConvertTo-SecureString "Password123!" -AsPlainText -Force
+          New-LocalUser "RDPUser" -Password $pass -Description "Cloud PC User"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDPUser"
+          Add-LocalGroupMember -Group "Administrators" -Member "RDPUser"
+
+      - name: 待機
+        shell: powershell
+        run: |
+          Write-Host "Tailscaleの管理画面に表示されている名前(github-xxx)で接続できます"
+          Start-Sleep -Seconds 21600
