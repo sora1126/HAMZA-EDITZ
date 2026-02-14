@@ -1,0 +1,43 @@
+name: RDP_Cloud_PC
+
+on: 
+  workflow_dispatch: # 手動で実行できるようにする設定
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 360 # 最大6時間実行
+    steps:
+      - name: Ngrokのダウンロードとインストール
+        run: |
+          Invoke-WebRequest https://bin.equinox.io/c/b342Ot6y56E/ngrok-v3-stable-windows-amd64.zip -OutFile ngrok.zip
+          Expand-Archive ngrok.zip
+
+      - name: Ngrokトークンの設定
+        run: .\ngrok\ngrok.exe config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+
+      - name: RDPの有効化
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1 -Force
+
+      - name: ユーザー作成（パスワード: Password123!）
+        run: |
+          $Password = ConvertTo-SecureString "Password123!" -AsPlainText -Force
+          New-LocalUser "RDPUser" -Password $Password -Description "Cloud PC User"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDPUser"
+          Add-LocalGroupMember -Group "Administrators" -Member "RDPUser"
+
+      - name: トンネルの開始と接続情報の表示
+        run: |
+          Start-Process -FilePath ".\ngrok\ngrok.exe" -ArgumentList "tcp 3389"
+          Start-Sleep -Seconds 10
+          $URL = (Invoke-WebRequest -Uri http://127.0.0.1:4040/api/tunnels).Content | ConvertFrom-Json
+          $Address = $URL.tunnels.public_url -replace "tcp://", ""
+          Write-Host "=========================================="
+          Write-Host "接続先アドレス: $Address"
+          Write-Host "ユーザー名: RDPUser"
+          Write-Host "パスワード: Password123!"
+          Write-Host "=========================================="
+          Start-Sleep -Seconds 21600 # 6時間待機
